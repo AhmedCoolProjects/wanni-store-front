@@ -13,6 +13,24 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye } from "lucide-react";
+import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { initializeApp } from "firebase/app";
+import { toast } from "sonner";
+
+// Firebase configuration - you should store these in environment variables
+const firebaseConfig = {
+  apiKey: "AIzaSyBpTMR6L4z7ktx9rnAa7DM0F5gxi2eVvs8",
+  authDomain: "wanni-ma-2e5fe.firebaseapp.com",
+  projectId: "wanni-ma-2e5fe",
+  storageBucket: "wanni-ma-2e5fe.firebasestorage.app",
+  messagingSenderId: "582052269799",
+  appId: "1:582052269799:web:c2ada9107bc78ae421dc42",
+  measurementId: "G-9M3HWVQGEN"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -38,6 +56,14 @@ export default function LoginPage() {
         "Registration successful! Please log in with your new account."
       );
     }
+
+    // Check if user just reset password
+    const resetPassword = searchParams.get("passwordReset");
+    if (resetPassword === "true") {
+      setSuccessMessage(
+        "Password reset successful! Please log in with your new password."
+      );
+    }
   }, [searchParams]);
 
   const form = useForm<LoginFormValues>({
@@ -54,13 +80,26 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // Send login request to our API
+      // First authenticate with Firebase
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        values.email,
+        values.password
+      );
+
+      // Get the Firebase ID token
+      const firebaseIdToken = await userCredential.user.getIdToken();
+
+      // Send the token to your backend for authentication
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify({
+          email: values.email,
+          firebaseIdToken: firebaseIdToken,
+        }),
       });
 
       const data = await response.json();
@@ -72,13 +111,36 @@ export default function LoginPage() {
       // Login successful - store token in local storage
       localStorage.setItem("authToken", data.token);
 
+      // Show success toast
+      toast.success("Login successful!");
+
       // Redirect to dashboard or home page
       router.push("/");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed", error);
-      setError(
-        error instanceof Error ? error.message : "Invalid email or password"
-      );
+
+      // Handle Firebase specific errors
+      if (error.code) {
+        switch (error.code) {
+          case "auth/user-not-found":
+          case "auth/wrong-password":
+            setError("Invalid email or password");
+            break;
+          case "auth/too-many-requests":
+            setError("Too many failed login attempts. Please try again later.");
+            break;
+          case "auth/user-disabled":
+            setError("This account has been disabled.");
+            break;
+          default:
+            setError(error.message || "Failed to sign in");
+            break;
+        }
+      } else {
+        setError(
+          error instanceof Error ? error.message : "Invalid email or password"
+        );
+      }
     } finally {
       setIsLoading(false);
     }

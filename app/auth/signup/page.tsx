@@ -10,6 +10,23 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { initializeApp } from "firebase/app";
+
+// Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBpTMR6L4z7ktx9rnAa7DM0F5gxi2eVvs8",
+  authDomain: "wanni-ma-2e5fe.firebaseapp.com",
+  projectId: "wanni-ma-2e5fe",
+  storageBucket: "wanni-ma-2e5fe.firebasestorage.app",
+  messagingSenderId: "582052269799",
+  appId: "1:582052269799:web:c2ada9107bc78ae421dc42",
+  measurementId: "G-9M3HWVQGEN"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -45,7 +62,17 @@ export default function SignupPage() {
     setError(null);
 
     try {
-      // Send registration request to our API
+      // First create the user in Firebase
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        values.email,
+        values.password
+      );
+      
+      // Get the Firebase ID token
+      const firebaseIdToken = await userCredential.user.getIdToken();
+
+      // Send registration request to our backend API
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
@@ -55,7 +82,7 @@ export default function SignupPage() {
           name: values.name,
           username: values.username,
           email: values.email,
-          password: values.password,
+          firebaseIdToken: firebaseIdToken,
         }),
       });
 
@@ -67,13 +94,32 @@ export default function SignupPage() {
 
       // Registration successful, redirect to login page
       router.push("/auth/login?registered=true");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Registration failed", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "An error occurred during registration"
-      );
+      
+      // Handle Firebase specific errors
+      if (error.code) {
+        switch (error.code) {
+          case "auth/email-already-in-use":
+            setError("Email address is already in use");
+            break;
+          case "auth/invalid-email":
+            setError("Invalid email address");
+            break;
+          case "auth/weak-password":
+            setError("Password is too weak");
+            break;
+          default:
+            setError(error.message || "Failed to create account");
+            break;
+        }
+      } else {
+        setError(
+          error instanceof Error
+            ? error.message
+            : "An error occurred during registration"
+        );
+      }
     } finally {
       setIsLoading(false);
     }

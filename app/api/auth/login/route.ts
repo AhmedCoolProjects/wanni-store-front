@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-// Define schema for validation
+// Define schema for validation requiring Firebase token
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
+  firebaseIdToken: z.string({
+    required_error: "Firebase ID token is required",
+  }),
 });
 
 export async function POST(request: Request) {
@@ -14,26 +16,34 @@ export async function POST(request: Request) {
     // Validate the request body against our schema
     const validatedData = loginSchema.parse(body);
 
-    // Here you would typically:
-    // 1. Check if user exists
-    // 2. Compare password hash
-    // 3. Create a session or token
+    let apiEndpoint = `${process.env.NEXT_PUBLIC_API_URL}/auth/login`;
 
-    // For now, we'll just simulate a successful login
-    // In a real app, you would verify credentials against a database
+    // Forward the request to your backend API with Firebase token only
+    const response = await fetch(apiEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: validatedData.email,
+        firebaseIdToken: validatedData.firebaseIdToken,
+      }),
+    });
 
-    // Mock authentication - in real app, replace with actual auth
-    const mockUser = {
-      id: "user_123456789",
-      email: validatedData.email,
-      name: "John Doe",
-    };
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { success: false, message: data.message || "Authentication failed" },
+        { status: response.status }
+      );
+    }
 
     return NextResponse.json(
       {
         success: true,
-        user: mockUser,
-        token: "mock_jwt_token_" + Math.random().toString(36).substring(2, 15),
+        user: data.user,
+        token: data.token,
       },
       { status: 200 }
     );
